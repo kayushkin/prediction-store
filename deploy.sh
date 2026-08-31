@@ -7,6 +7,8 @@ SERVICE="prediction-store.service"
 BINARY="prediction-store"
 UNIT_SRC="$REPO_DIR/$SERVICE"
 UNIT_DEST="$HOME/.config/systemd/user/$SERVICE"
+# Every scripts/<name>.sh that a scheduler job runs, installed as ~/bin/<name>.
+DISPATCHERS=(prediction-resolve-sweep)
 
 # schema.sql creates an FTS5 virtual table and mattn/go-sqlite3 only compiles
 # FTS5 in when asked. Without this tag the build succeeds and the service dies at
@@ -25,6 +27,25 @@ go test -tags "$GO_TAGS" ./...
 echo "==> Building $BINARY (tags: $GO_TAGS)..."
 go build -tags "$GO_TAGS" -o "$BINARY" ./cmd/prediction-store
 echo "    built: $(ls -lh "$BINARY" | awk '{print $5}')"
+
+echo "==> Installing dispatchers..."
+# The scheduler shell jobs run the copies in $BIN_DIR. Installing them here is
+# what keeps those copies from drifting: event-radar-dispatch was hand-copied
+# once and then sat three prompt revisions behind its repo, so the nightly radar
+# was running rules the repo had already replaced.
+for name in "${DISPATCHERS[@]}"; do
+  src="$REPO_DIR/scripts/$name.sh"
+  dest="$BIN_DIR/$name"
+  if [ -f "$src" ]; then
+    install -Dm 755 "$src" "$dest"
+    echo "    installed: $dest"
+  else
+    echo "    WARNING: $src does not exist yet — skipping." >&2
+    echo "    WARNING: $dest is unchanged, so any scheduler job pointing at it is" >&2
+    echo "    WARNING: running whatever was installed last, or nothing at all." >&2
+    echo "    WARNING: Re-run this script once that dispatcher lands." >&2
+  fi
+done
 
 echo "==> Installing systemd unit..."
 mkdir -p "$(dirname "$UNIT_DEST")"
