@@ -329,3 +329,64 @@ func TestMisspelledPatchKeyIsRefusedRatherThanIgnored(t *testing.T) {
 		t.Fatalf("error should name the typo and the accepted keys, got %s", body)
 	}
 }
+
+// Correcting a note is a PATCH; recording one is part of resolving. Both work,
+// and neither can move the outcome.
+func TestResolutionNoteIsPatchableOnceResolved(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, body := do(t, srv, "POST", "/predictions", samplePayload())
+	var created Prediction
+	json.Unmarshal(body, &created)
+
+	if status, body := do(t, srv, "POST", "/predictions/"+created.ID+"/resolve",
+		map[string]any{"outcome": "false", "note": "the field was dropped"}); status != http.StatusOK {
+		t.Fatalf("resolve status = %d, want 200: %s", status, body)
+	}
+
+	status, body := do(t, srv, "PATCH", "/predictions/"+created.ID,
+		map[string]any{"resolution_note": "the field was dropped by the OLD binary; rebuilt since"})
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", status, body)
+	}
+	var patched Prediction
+	json.Unmarshal(body, &patched)
+	if !strings.Contains(patched.ResolutionNote, "OLD binary") {
+		t.Fatalf("note = %q, want the correction", patched.ResolutionNote)
+	}
+	if patched.Outcome != "false" {
+		t.Fatalf("outcome = %q, want false — patching a note must not move it", patched.Outcome)
+	}
+}
+
+// Refused on an open row, and the message names the route that does settle it.
+func TestPatchingTheNoteOfAnOpenPredictionIsFourHundred(t *testing.T) {
+	srv, _ := newTestServer(t)
+	_, body := do(t, srv, "POST", "/predictions", samplePayload())
+	var created Prediction
+	json.Unmarshal(body, &created)
+
+	status, body := do(t, srv, "PATCH", "/predictions/"+created.ID,
+		map[string]any{"resolution_note": "it went fine"})
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", status, body)
+	}
+	if !strings.Contains(string(body), "resolve") {
+		t.Fatalf("error should name the resolve route, got %s", body)
+	}
+}
+
+// The INSERT writes ” over this field, so accepting it silently discarded the
+// caller's prose and answered 201 as though it had landed.
+func TestResolutionNoteAtCreationIsRefusedRatherThanDiscarded(t *testing.T) {
+	srv, _ := newTestServer(t)
+	payload := samplePayload()
+	payload["resolution_note"] = "it will go fine"
+
+	status, body := do(t, srv, "POST", "/predictions", payload)
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", status, body)
+	}
+	if !strings.Contains(string(body), "resolve") {
+		t.Fatalf("error should name the resolve route, got %s", body)
+	}
+}

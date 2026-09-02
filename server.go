@@ -49,6 +49,9 @@ var patchableFields = map[string]bool{
 	"provenance":          true,
 	"author":              true,
 	"due_at":              true,
+	// The note explains an outcome it cannot change, so a wrong one is worth
+	// correcting. Store.Patch refuses it on a row that has not resolved yet.
+	"resolution_note": true,
 }
 
 func sortedPatchableFields() []string {
@@ -136,6 +139,15 @@ func (h *handler) listPredictions(w http.ResponseWriter, r *http.Request) {
 func (h *handler) createPrediction(w http.ResponseWriter, r *http.Request) {
 	var p Prediction
 	if !decode(w, r, &p) {
+		return
+	}
+	// A note about why a row resolved cannot exist before it is stated, and the
+	// INSERT writes '' over this field regardless. Left alone that is a silent
+	// discard: the caller sends prose and never learns it was thrown away.
+	if strings.TrimSpace(p.ResolutionNote) != "" {
+		writeErr(w, http.StatusBadRequest,
+			`"resolution_note" cannot be set at creation: a prediction has no outcome yet. `+
+				`Send it with the outcome to POST /predictions/{id}/resolve.`)
 		return
 	}
 	created, err := h.s.Create(&p)

@@ -38,9 +38,9 @@ Env: `PREDICTION_STORE_ADDR` (default `:8313`), `PREDICTION_STORE_DATA_DIR`
 curl -s -X POST http://localhost:8313/predictions \
   -H 'Content-Type: application/json' \
   -d '{"claim":"The 502s are auth-store token refresh, not nginx",
-       "resolution_criteria":"auth-store refresh logs line up with the 502 timestamps",
+       "resolution_criteria":"journalctl -u auth-store --since 14:00 | grep refresh, against the 502 timestamps in /var/log/nginx/error.log. Resolves true if every 502 sits inside a refresh window, false if any 502 falls outside one",
        "category":"root-cause","provenance":"inferred","probability":0.6,
-       "tags":["ops"],"author":"claude"}'
+       "due_at":1788400000,"tags":["ops"],"author":"claude"}'
 
 # revise it — the old number stays, this appends
 curl -s -X POST http://localhost:8313/predictions/prediction_000001/estimates \
@@ -57,9 +57,23 @@ curl -s "http://localhost:8313/base-rates"                      # how often this
 curl -s "http://localhost:8313/predictions?status=open&overdue=1"
 ```
 
+The criterion above is written as the two commands that settle it and the
+reading that decides each outcome, and it carries a `due_at`. Both are
+deliberate, and both are the usual reason a row dies: nothing to run means
+nobody runs it, and an undated row can never be overdue, so the overdue sweep
+never surfaces it. `CONTRACT.md` has the rubric under **Writing a resolution
+criterion**.
+
 `CONTRACT.md` is the route table and the field-by-field reference.
 
 ## Design notes
+
+**A note can be corrected; an outcome cannot.** `resolution_note` is the one
+outcome-shaped field `PATCH` accepts, and only on a row that has already
+resolved — the note explains a result it has no power to change, so fixing
+hurried prose costs the ledger nothing. On an open row it is a 400 naming
+`POST /resolve`, and at creation it is a 400 rather than the silent discard it
+used to be.
 
 **The estimates trail is append-only.** There is no update route and no delete
 route for an estimate. `probability` on the prediction is only ever the newest

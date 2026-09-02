@@ -40,7 +40,7 @@ module: fts5` — `Open()` says so and names the flag.
 | `status` | `open` \| `resolved` \| `void` |
 | `outcome` | `true` \| `false`. Empty while open, and empty on a `void` row — void is not a miss |
 | `resolved_at` | when the outcome was recorded |
-| `resolution_note` | why it resolved that way. Searchable |
+| `resolution_note` | why it resolved that way. Searchable. The only outcome-shaped field `PATCH` accepts, and only after the row resolved — it explains a result it cannot change. Refused at creation |
 | `created_at` / `updated_at` | |
 | `deleted_at` | soft delete: 0 = live. Hidden from every read path but `?include_deleted` |
 | **`estimates`** | **computed on read** — the full trail, oldest first. Ignored on write |
@@ -106,6 +106,55 @@ lookup splits on.
 
 ---
 
+## Writing a resolution criterion
+
+The store enforces that a criterion exists. It cannot enforce that the criterion
+works, and a criterion that does not work is the main way rows die: they sit
+open, score nothing, and quietly hollow out every number below.
+
+One test decides it. **Could you run this yourself, today, and would it give the
+same answer whoever ran it?** Write the criterion as the command you would run
+and the reading that settles it:
+
+```
+sqlite3 ~/.config/model-store/store.db "select short_name from models
+where id='claude-fable-5-1'" on or after 2026-09-04; non-empty resolves true
+```
+
+Three ways it goes wrong, each taken from a row in this store:
+
+**It waits on somebody else's behaviour.** `prediction_000004` claimed that
+restoring an nginx route fixes a Discord bot, and asked for "a new row in
+`transitions` with `actor=user`". The route was fixed and answered nine live
+interactions; the row stayed unresolvable because nobody had clicked Join.
+The claim was about a route, the criterion was about a stranger. Ask for the
+thing you changed, not for the reaction you hope it causes.
+
+**There is no command in it.** `prediction_000009` resolves when consolidating a
+policy "eliminates user reports of missing final responses over 3 weeks". There
+is nothing to run, so nothing will run it. A criterion with no executable step
+is a wish with a deadline attached.
+
+**It answers the same either way.** A check that passes under every explanation
+you are weighing measures none of them. Spend the criterion on the cheapest
+check that would come out *differently* if you are wrong.
+
+Two more rules that cost nothing and are skipped anyway:
+
+**Say what makes it false.** A criterion with only a success condition never
+resolves false — it stays open until someone gives up on it, and a ledger of
+abandoned rows scores better than it deserves. `non-empty resolves true` above
+implies the other branch; write it out when it does not.
+
+**Set `due_at`.** Only a dated open row can be overdue, and only an overdue row
+reaches `scripts/prediction-resolve-sweep.sh` and the todo it maintains. An
+undated row is invisible to the single mechanism that will ever remind you it
+exists. If you genuinely cannot date the answer, date the next time you will
+*look* — a row you review and re-date has cost one minute; a row nobody ever
+looks at cost the whole prediction.
+
+---
+
 ## Vocabularies
 
 `GET /vocabulary` (and its alias `GET /categories`) serves all six lists, so no
@@ -148,7 +197,7 @@ caller builds a filter from whatever values the rows happen to hold.
 | GET | `/predictions` | `status`, `category`, `tag`, `author`, `provenance`, `outcome`, `entity_type`, `entity_ref`, `q`, `overdue` (alias `due`), `since`, `until`, `include_deleted`, `expand`, `limit`, `offset` → `{"predictions":[…],"total":n}`, where `total` ignores limit/offset. Newest first. `expand=1` attaches estimates and links to each row |
 | POST | `/predictions` | **201** with the created row. Writes the opening estimate in the same transaction, and any `links` in the body |
 | GET | `/predictions/{id}` | with estimates and links. Readable when soft-deleted |
-| PATCH | `/predictions/{id}` | `claim`, `resolution_criteria`, `category`, `tags`, `provenance`, `author`, `due_at`. `probability`, `outcome` and `status` are each a **400** naming the route that does move them |
+| PATCH | `/predictions/{id}` | `claim`, `resolution_criteria`, `category`, `tags`, `provenance`, `author`, `due_at`, `resolution_note`. `probability`, `outcome` and `status` are each a **400** naming the route that does move them. `resolution_note` is a **400** on a row that has not resolved yet |
 | DELETE | `/predictions/{id}` | soft → `{"deleted":id}`; `?hard=true` → `{"purged":id}`, taking its estimates and links by cascade |
 | POST | `/predictions/{id}/restore` | undoes a soft delete; returns the row |
 | GET | `/predictions/{id}/estimates` | `{"estimates":[…]}`, oldest first |
@@ -165,9 +214,11 @@ or `group_by`, and a malformed search query) / **404** no such row / **409**
 already resolved, or an estimate on a row that is not open / **500** otherwise.
 
 Request bodies are decoded with unknown fields rejected, so a misspelled key is
-a 400 rather than a write that silently drops it. `PATCH` is the exception in
-mechanism only: it reads the body as a map so it can name the three forbidden
-keys, and it ignores keys it does not know.
+a 400 rather than a write that silently drops it. `PATCH` reaches the same
+answer by a different route: it reads the body as a map so it can name the three
+forbidden keys, which defeats `DisallowUnknownFields`, so it then checks the
+remaining keys against its own allowlist by hand. A `PATCH` of `{"clam":"…"}` is
+a 400, not a 200 that changed nothing.
 
 ---
 

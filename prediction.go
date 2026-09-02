@@ -279,6 +279,10 @@ func (s *Store) Count(f Filter) (int, error) {
 // Patch edits the descriptive fields. It refuses probability and outcome by
 // having nowhere to put them: the number moves through AddEstimate so the trail
 // survives, and the outcome through Resolve so it happens once.
+//
+// resolution_note is the exception, and only on a row that has already
+// resolved: the note explains an outcome it cannot change, so correcting it
+// costs the ledger nothing. On an open row it is refused.
 func (s *Store) Patch(id string, patch Patch) (*Prediction, error) {
 	current, err := s.Get(id)
 	if err != nil {
@@ -305,15 +309,26 @@ func (s *Store) Patch(id string, patch Patch) (*Prediction, error) {
 	if patch.DueAt != nil {
 		current.DueAt = *patch.DueAt
 	}
+	if patch.ResolutionNote != nil {
+		// An open row has no resolution, so it can have no note about one. Writing
+		// one anyway would let a caller state the outcome in prose while the row
+		// still scores nothing, and the next reader would believe the row was
+		// settled. Refuse, and name the route that does settle it.
+		if current.Status == "open" {
+			return nil, fmt.Errorf("%w: prediction %s is still open, so it has no resolution to annotate: "+
+				"record the outcome and the note together with POST /predictions/{id}/resolve", ErrInvalidPrediction, id)
+		}
+		current.ResolutionNote = strings.TrimSpace(*patch.ResolutionNote)
+	}
 	if err := validateForWrite(current); err != nil {
 		return nil, err
 	}
 	_, err = s.db.Exec(`
 		UPDATE predictions SET claim=?, resolution_criteria=?, category=?, tags=?,
-			provenance=?, author=?, due_at=?, updated_at=?
+			provenance=?, author=?, due_at=?, resolution_note=?, updated_at=?
 		WHERE id=?`,
 		current.Claim, current.ResolutionCriteria, current.Category, marshalTags(current.Tags),
-		current.Provenance, current.Author, current.DueAt, now(), id)
+		current.Provenance, current.Author, current.DueAt, current.ResolutionNote, now(), id)
 	if err != nil {
 		return nil, err
 	}

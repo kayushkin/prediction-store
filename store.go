@@ -100,6 +100,12 @@ type Filter struct {
 // Patch carries only the fields a caller mentioned. Probability and outcome are
 // deliberately absent: the first moves through POST /estimates so the trail
 // survives, the second through POST /resolve so it can only happen once.
+//
+// ResolutionNote is the one field here that describes an outcome, and it is
+// editable for a reason the others are not: the note is prose written in a
+// hurry at the moment of resolving, and a wrong note is a wrong record. What
+// must not move is the outcome itself, and this cannot move it. Correcting why
+// a row resolved is bookkeeping; changing whether it resolved true is cheating.
 type Patch struct {
 	Claim              *string   `json:"claim"`
 	ResolutionCriteria *string   `json:"resolution_criteria"`
@@ -108,6 +114,7 @@ type Patch struct {
 	Provenance         *string   `json:"provenance"`
 	Author             *string   `json:"author"`
 	DueAt              *int64    `json:"due_at"`
+	ResolutionNote     *string   `json:"resolution_note"`
 }
 
 // TagCount is one tag and how many live predictions carry it.

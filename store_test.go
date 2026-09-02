@@ -342,3 +342,52 @@ func TestOverdueFindsOnlyUnresolvedPastDeadlines(t *testing.T) {
 		t.Fatalf("a resolved prediction is still reported overdue")
 	}
 }
+
+// The note is prose written in a hurry at the moment of resolving, so a wrong
+// one is a wrong record and worth correcting. What must stay put is the outcome
+// — and Patch cannot reach it, which is what makes this safe.
+func TestTheResolutionNoteCanBeCorrectedAndTheOutcomeCannot(t *testing.T) {
+	s := newTestStore(t)
+	created := mustCreate(t, s, samplePrediction())
+	if _, err := s.Resolve(created.ID, "true", "measured live; the field was kept"); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	corrected := "measured live on a throwaway job, not the real one — same result"
+	updated, err := s.Patch(created.ID, Patch{ResolutionNote: &corrected})
+	if err != nil {
+		t.Fatalf("patch note: %v", err)
+	}
+	if updated.ResolutionNote != corrected {
+		t.Fatalf("note = %q, want %q", updated.ResolutionNote, corrected)
+	}
+	if updated.Outcome != "true" || updated.Status != "resolved" {
+		t.Fatalf("patching the note moved the outcome: status=%q outcome=%q", updated.Status, updated.Outcome)
+	}
+	if updated.ResolvedAt != created.ResolvedAt && updated.ResolvedAt == 0 {
+		t.Fatalf("patching the note cleared resolved_at")
+	}
+}
+
+// An open row has no resolution, so a note about one is a claim that the row
+// settled while it still scores nothing. Refusing it is the whole point.
+func TestAnOpenPredictionHasNoResolutionToAnnotate(t *testing.T) {
+	s := newTestStore(t)
+	created := mustCreate(t, s, samplePrediction())
+
+	note := "it went fine"
+	_, err := s.Patch(created.ID, Patch{ResolutionNote: &note})
+	if !errors.Is(err, ErrInvalidPrediction) {
+		t.Fatalf("err = %v, want ErrInvalidPrediction", err)
+	}
+	if !strings.Contains(err.Error(), "resolve") {
+		t.Fatalf("error should name the route that settles it, got %v", err)
+	}
+	after, err := s.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if after.ResolutionNote != "" {
+		t.Fatalf("refused patch still wrote the note: %q", after.ResolutionNote)
+	}
+}
