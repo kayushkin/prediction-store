@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const predictionColumns = `
@@ -66,6 +67,9 @@ func validateForWrite(p *Prediction) error {
 // Create records a new prediction and its first estimate in one transaction.
 func (s *Store) Create(input *Prediction) (*Prediction, error) {
 	if err := validateForWrite(input); err != nil {
+		return nil, err
+	}
+	if err := validateDueDate(input.DueAt); err != nil {
 		return nil, err
 	}
 	tx, err := s.db.Begin()
@@ -306,7 +310,15 @@ func (s *Store) Patch(id string, patch Patch) (*Prediction, error) {
 	if patch.Author != nil {
 		current.Author = strings.TrimSpace(*patch.Author)
 	}
-	if patch.DueAt != nil {
+	if patch.DueAt != nil && *patch.DueAt != current.DueAt {
+		// Checked only when the value actually moves. A row goes overdue by the
+		// clock advancing, not by anyone writing to it, and a read-modify-write
+		// caller resending the deadline it just read must still be able to fix a
+		// typo in the claim. What is refused is a NEW deadline that is already
+		// past — which is the only way the mistake gets in.
+		if err := validateDueDate(*patch.DueAt); err != nil {
+			return nil, err
+		}
 		current.DueAt = *patch.DueAt
 	}
 	if patch.ResolutionNote != nil {
@@ -491,4 +503,35 @@ func (s *Store) ListTags() ([]TagCount, error) {
 		out = append(out, tc)
 	}
 	return out, rows.Err()
+}
+
+// validateDueDate refuses a deadline that has already passed at the moment it
+// is written.
+//
+// The store already refuses a claim with no resolution criteria and a
+// probability off the ladder, for the same reason: a row that cannot be scored
+// is worse than no row. A due date in the past is that failure wearing a
+// timestamp. Nothing can be predicted about a moment that has gone, so such a
+// row is not a prediction with a deadline, it is a typo — and the typo is
+// silent, because every read path treats the row as merely late.
+//
+// Measured on the live store 2026-09-04: three of twenty-nine rows carried a
+// due date EARLIER than their own created_at, all three off by exactly one year
+// (2025 for 2026) from one authoring hand. The overdue sweep dutifully reported
+// two of them as "336 days overdue" and "307 days overdue" and wrote them into
+// a noteboard todo telling the reader to resolve claims whose evidence window
+// had not opened yet.
+//
+// A due date is optional — leave it at 0 for a claim with no deadline. So
+// refusing a past one costs no legitimate caller anything.
+func validateDueDate(dueAt int64) error {
+	if dueAt <= 0 {
+		return nil
+	}
+	if current := now(); dueAt <= current {
+		return fmt.Errorf(
+			"%w: due_at %d (%s) has already passed — a deadline in the past cannot be predicted against, and it reads downstream as merely overdue rather than as the mistake it is. Use a future date, or omit due_at for a claim with no deadline",
+			ErrInvalidPrediction, dueAt, time.Unix(dueAt, 0).UTC().Format(time.RFC3339))
+	}
+	return nil
 }

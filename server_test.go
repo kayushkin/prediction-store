@@ -284,10 +284,15 @@ func TestDeleteIsReversibleAndHardDeleteIsNot(t *testing.T) {
 }
 
 func TestHealthCountsOverdue(t *testing.T) {
-	srv, _ := newTestServer(t)
+	srv, store := newTestServer(t)
 	payload := samplePayload()
-	payload["due_at"] = 1
-	do(t, srv, "POST", "/predictions", payload)
+	payload["due_at"] = now() + 86400
+	_, created := do(t, srv, "POST", "/predictions", payload)
+	var born struct {
+		ID string `json:"id"`
+	}
+	json.Unmarshal(created, &born)
+	ageDueDate(t, store, born.ID, 1)
 
 	status, body := do(t, srv, "GET", "/health", nil)
 	if status != http.StatusOK {

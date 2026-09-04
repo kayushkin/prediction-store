@@ -16,6 +16,18 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+// ageDueDate moves a stored deadline into the past by writing it straight to
+// the row, which is what the passage of time looks like from the row's point of
+// view. Tests that need an OVERDUE prediction have to go this way now: Create
+// and Patch both refuse a deadline that has already passed, so a row can no
+// longer be born late, only become late.
+func ageDueDate(t *testing.T, s *Store, id string, dueAt int64) {
+	t.Helper()
+	if _, err := s.db.Exec(`UPDATE predictions SET due_at=? WHERE id=?`, dueAt, id); err != nil {
+		t.Fatalf("age due date: %v", err)
+	}
+}
+
 func mustCreate(t *testing.T, s *Store, p *Prediction) *Prediction {
 	t.Helper()
 	created, err := s.Create(p)
@@ -317,8 +329,9 @@ func TestLinkNeedsBothTypeAndRef(t *testing.T) {
 func TestOverdueFindsOnlyUnresolvedPastDeadlines(t *testing.T) {
 	s := newTestStore(t)
 	past := samplePrediction()
-	past.DueAt = 1
+	past.DueAt = now() + 86400
 	overdue := mustCreate(t, s, past)
+	ageDueDate(t, s, overdue.ID, 1)
 
 	future := samplePrediction()
 	future.DueAt = now() + 86400
@@ -389,5 +402,102 @@ func TestAnOpenPredictionHasNoResolutionToAnnotate(t *testing.T) {
 	}
 	if after.ResolutionNote != "" {
 		t.Fatalf("refused patch still wrote the note: %q", after.ResolutionNote)
+	}
+}
+
+// The mistake this refuses is not hypothetical: three of the live store's
+// twenty-nine rows were written with a due date a year BEFORE their own
+// created_at, and every read path downstream reported them as merely overdue.
+func TestADeadlineThatHasAlreadyPassedIsRefused(t *testing.T) {
+	s := newTestStore(t)
+	stale := samplePrediction()
+	stale.DueAt = now() - 86400
+
+	_, err := s.Create(stale)
+	if !errors.Is(err, ErrInvalidPrediction) {
+		t.Fatalf("err = %v, want ErrInvalidPrediction", err)
+	}
+	// The message has to name the date it refused, or the caller cannot see that
+	// the year is what is wrong with it.
+	if !strings.Contains(err.Error(), "due_at") {
+		t.Fatalf("error should name the field it refused, got %v", err)
+	}
+
+	got, err := s.Count(Filter{})
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("refused create still stored %d row(s)", got)
+	}
+}
+
+// A claim with no deadline is a normal thing to log, and 0 is how it is said.
+func TestOmittingTheDeadlineIsStillAllowed(t *testing.T) {
+	s := newTestStore(t)
+	noDeadline := samplePrediction()
+	noDeadline.DueAt = 0
+	created := mustCreate(t, s, noDeadline)
+	if created.DueAt != 0 {
+		t.Fatalf("due_at = %d, want 0", created.DueAt)
+	}
+}
+
+func TestPatchRefusesToMoveADeadlineIntoThePast(t *testing.T) {
+	s := newTestStore(t)
+	created := mustCreate(t, s, samplePrediction())
+
+	stale := now() - 86400
+	if _, err := s.Patch(created.ID, Patch{DueAt: &stale}); !errors.Is(err, ErrInvalidPrediction) {
+		t.Fatalf("err = %v, want ErrInvalidPrediction", err)
+	}
+	after, err := s.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if after.DueAt == stale {
+		t.Fatalf("refused patch still moved the deadline to %d", after.DueAt)
+	}
+}
+
+// A row goes overdue by the clock advancing, not by anyone writing to it. A
+// read-modify-write caller that resends the deadline it just read must still be
+// able to correct the claim — otherwise the check would freeze every late row.
+func TestAnAlreadyLateRowCanStillBeEditedWithItsOwnDeadlineResent(t *testing.T) {
+	s := newTestStore(t)
+	created := mustCreate(t, s, samplePrediction())
+	ageDueDate(t, s, created.ID, now()-86400)
+
+	current, err := s.Get(created.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	corrected := "the same claim, with the typo in it fixed"
+	updated, err := s.Patch(created.ID, Patch{Claim: &corrected, DueAt: &current.DueAt})
+	if err != nil {
+		t.Fatalf("patching a late row with its own deadline resent: %v", err)
+	}
+	if updated.Claim != corrected {
+		t.Fatalf("claim = %q, want %q", updated.Claim, corrected)
+	}
+	if updated.DueAt != current.DueAt {
+		t.Fatalf("due_at moved from %d to %d", current.DueAt, updated.DueAt)
+	}
+}
+
+// Correcting the year IS the repair the live rows need, so moving a bad
+// deadline forward has to keep working.
+func TestADeadlineCanBeCorrectedForwards(t *testing.T) {
+	s := newTestStore(t)
+	created := mustCreate(t, s, samplePrediction())
+	ageDueDate(t, s, created.ID, now()-86400)
+
+	fixed := now() + 30*86400
+	updated, err := s.Patch(created.ID, Patch{DueAt: &fixed})
+	if err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	if updated.DueAt != fixed {
+		t.Fatalf("due_at = %d, want %d", updated.DueAt, fixed)
 	}
 }

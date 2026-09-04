@@ -36,7 +36,7 @@ module: fts5` — `Open()` says so and names the flag.
 | `author` | who or what stated it. `(unattributed)` when grouping if empty |
 | `probability` | the **current** odds: denormalised from the newest row in `estimates` |
 | `initial_probability` | the opening odds, frozen at creation. Never moves, so the gap to `probability` measures how well you update rather than how well you guess |
-| `due_at` | resolve-by. 0 = no deadline; only a dated open row can be overdue |
+| `due_at` | resolve-by. 0 = no deadline; only a dated open row can be overdue. A date that has **already passed** is a **400** on both `POST` and `PATCH` — see below |
 | `status` | `open` \| `resolved` \| `void` |
 | `outcome` | `true` \| `false`. Empty while open, and empty on a `void` row — void is not a miss |
 | `resolved_at` | when the outcome was recorded |
@@ -153,6 +153,21 @@ exists. If you genuinely cannot date the answer, date the next time you will
 *look* — a row you review and re-date has cost one minute; a row nobody ever
 looks at cost the whole prediction.
 
+**A deadline already in the past is refused.** `POST /predictions` and
+`PATCH /predictions/{id}` both answer **400** for a `due_at` that is not in the
+future, naming the date they read back. Nothing can be predicted about a moment
+that has gone, and the mistake is silent otherwise: every read path treats such
+a row as merely *late*, so the overdue sweep reports it and the todo it
+maintains tells you to resolve a claim whose evidence window has not opened.
+Measured 2026-09-04 — three of twenty-nine live rows carried a `due_at` a year
+before their own `created_at`, and two were being reported as "336 days overdue"
+and "307 days overdue".
+
+`PATCH` checks only a deadline that **moves**. A row goes overdue by the clock
+advancing, not by anyone writing to it, so a read-modify-write caller resending
+the deadline it just read can still correct the claim, and a wrong date can
+always be corrected *forwards*.
+
 ---
 
 ## Vocabularies
@@ -197,7 +212,7 @@ caller builds a filter from whatever values the rows happen to hold.
 | GET | `/predictions` | `status`, `category`, `tag`, `author`, `provenance`, `outcome`, `entity_type`, `entity_ref`, `q`, `overdue` (alias `due`), `since`, `until`, `include_deleted`, `expand`, `limit`, `offset` → `{"predictions":[…],"total":n}`, where `total` ignores limit/offset. Newest first. `expand=1` attaches estimates and links to each row |
 | POST | `/predictions` | **201** with the created row. Writes the opening estimate in the same transaction, and any `links` in the body |
 | GET | `/predictions/{id}` | with estimates and links. Readable when soft-deleted |
-| PATCH | `/predictions/{id}` | `claim`, `resolution_criteria`, `category`, `tags`, `provenance`, `author`, `due_at`, `resolution_note`. `probability`, `outcome` and `status` are each a **400** naming the route that does move them. `resolution_note` is a **400** on a row that has not resolved yet |
+| PATCH | `/predictions/{id}` | `claim`, `resolution_criteria`, `category`, `tags`, `provenance`, `author`, `due_at`, `resolution_note`. `probability`, `outcome` and `status` are each a **400** naming the route that does move them. `resolution_note` is a **400** on a row that has not resolved yet. A `due_at` that *changes* to a date already past is a **400**; resending the current one is not |
 | DELETE | `/predictions/{id}` | soft → `{"deleted":id}`; `?hard=true` → `{"purged":id}`, taking its estimates and links by cascade |
 | POST | `/predictions/{id}/restore` | undoes a soft delete; returns the row |
 | GET | `/predictions/{id}/estimates` | `{"estimates":[…]}`, oldest first |
