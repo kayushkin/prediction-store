@@ -85,3 +85,7 @@ is how a calibration record becomes a flattering one.
 0.99 and 0.999. Anything else is a 400 naming the two nearest rungs. `0.73`
 claims a precision nobody has, and quantising also makes the Murphy
 decomposition exact rather than an artefact of where the bucket edges fell.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
