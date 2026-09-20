@@ -10,17 +10,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/kayushkin/llm-bridge/servicesettings"
 	predictionstore "github.com/kayushkin/prediction-store"
 )
 
 func main() {
-	addr := os.Getenv("PREDICTION_STORE_ADDR")
-	if addr == "" {
-		addr = ":8313"
+	settings, err := predictionstore.NewSettingsRegistry(servicesettings.ProcessEnvironment())
+	if err != nil {
+		log.Fatalf("read settings: %v", err)
 	}
-	dataDir := os.Getenv("PREDICTION_STORE_DATA_DIR")
+	addr := settings.String(predictionstore.SettingListenAddress)
 
-	store, err := predictionstore.Open(dataDir)
+	store, err := predictionstore.Open(settings.String(predictionstore.SettingDataDirectory))
 	if err != nil {
 		log.Fatalf("open store: %v", err)
 	}
@@ -28,6 +29,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	predictionstore.RegisterHandlers(mux, store)
+	predictionstore.RegisterSettingsHandler(mux, settings)
 
 	srv := &http.Server{
 		Addr:              addr,

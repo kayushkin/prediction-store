@@ -52,6 +52,17 @@ for name in "${DISPATCHERS[@]}"; do
   fi
 done
 
+# A set PREDICTION_STORE_ variable that settings.go does not declare stops the new
+# binary at boot. Ask before the old one is stopped: build the registry from the
+# running service's own environment. The test prints a verdict, never a value.
+echo "==> Checking the running service's environment against the declared settings..."
+live_pid="$(systemctl --user show -p MainPID --value "$SERVICE")"
+if [ -n "$live_pid" ] && [ "$live_pid" != "0" ]; then
+  go test -tags "$GO_TAGS" -count=1 -run '^TestTheLiveProcessEnvironmentBuildsARegistry$' . -args -live-environment-file="/proc/$live_pid/environ"
+else
+  echo "    $SERVICE is not running, so there is no environment to check"
+fi
+
 echo "==> Installing systemd unit..."
 mkdir -p "$(dirname "$UNIT_DEST")"
 cp "$UNIT_SRC" "$UNIT_DEST"

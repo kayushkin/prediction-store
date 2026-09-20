@@ -204,6 +204,7 @@ caller builds a filter from whatever values the rows happen to hold.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/health` | `{"status":"ok","counts":{predictions,open,overdue}}` |
+| GET | `/settings` | every environment variable the service reads, as llm-bridge `msg.ServiceSettings`: the value in force, its default and where it came from. Read-only: no setting is editable and `PUT /settings/{key}` is not mounted |
 | GET | `/vocabulary` | `{categories, provenances, statuses, outcomes, group_by, probability_ladder}` |
 | GET | `/categories` | the same payload, same handler |
 | GET | `/tags` | `{"tags":[{tag,count}]}` over live predictions, most used first |
