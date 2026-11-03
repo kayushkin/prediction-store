@@ -148,7 +148,7 @@ func TestEmptySetScoresNothingRatherThanZero(t *testing.T) {
 
 func TestCalibrationSlicesByCategoryWorstFirst(t *testing.T) {
 	s := newTestStore(t)
-	// Confident and wrong about causes; confident and right about behaviour.
+	// Confident and wrong about causes; confident and right about behavior.
 	for i := 0; i < 3; i++ {
 		p := samplePrediction()
 		p.Category = "root-cause"

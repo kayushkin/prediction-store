@@ -202,7 +202,7 @@ func TestResolvingTwiceIsRefused(t *testing.T) {
 func TestVoidIsNotAMiss(t *testing.T) {
 	s := newTestStore(t)
 	created := mustCreate(t, s, samplePrediction())
-	voided, err := s.Resolve(created.ID, "void", "the work was cancelled")
+	voided, err := s.Resolve(created.ID, "void", "the work was canceled")
 	if err != nil {
 		t.Fatalf("resolve void: %v", err)
 	}

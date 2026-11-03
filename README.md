@@ -84,7 +84,7 @@ is how a calibration record becomes a flattering one.
 **Probabilities sit on a ladder** — 0.001, 0.01, every 0.05 up to 0.95, then
 0.99 and 0.999. Anything else is a 400 naming the two nearest rungs. `0.73`
 claims a precision nobody has, and quantising also makes the Murphy
-decomposition exact rather than an artefact of where the bucket edges fell.
+decomposition exact rather than an artifact of where the bucket edges fell.
 
 ## License
 

@@ -49,7 +49,7 @@ var categorySynonyms = map[string]string{
 var Provenances = []string{"measured", "read", "inferred", "guessed"}
 
 // Statuses. `void` means the claim stopped being resolvable — the work was
-// cancelled, the question changed — and it is excluded from every score rather
+// canceled, the question changed — and it is excluded from every score rather
 // than counted as a miss.
 var Statuses = []string{"open", "resolved", "void"}
 

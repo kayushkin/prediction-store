@@ -6,7 +6,7 @@
 PRAGMA foreign_keys = ON;
 
 -- A prediction is a resolvable claim plus the odds you would bet at.
--- `probability` is the CURRENT number and is denormalised from the newest row
+-- `probability` is the CURRENT number and is denormalized from the newest row
 -- in `estimates`; `initial_probability` is frozen at the first estimate so the
 -- gap between them measures how well you update, not just how well you guess.
 CREATE TABLE IF NOT EXISTS predictions (

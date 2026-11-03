@@ -34,7 +34,7 @@ module: fts5` — `Open()` says so and names the flag.
 | `tags` | JSON array, blank entries dropped |
 | `provenance` | where the belief came from, not how strong it is. Moves to the newest estimate's provenance |
 | `author` | who or what stated it. `(unattributed)` when grouping if empty |
-| `probability` | the **current** odds: denormalised from the newest row in `estimates` |
+| `probability` | the **current** odds: denormalized from the newest row in `estimates` |
 | `initial_probability` | the opening odds, frozen at creation. Never moves, so the gap to `probability` measures how well you update rather than how well you guess |
 | `due_at` | resolve-by. 0 = no deadline; only a dated open row can be overdue. A date that has **already passed** is a **400** on both `POST` and `PATCH` — see below |
 | `status` | `open` \| `resolved` \| `void` |
@@ -123,7 +123,7 @@ where id='claude-fable-5-1'" on or after 2026-09-04; non-empty resolves true
 
 Three ways it goes wrong, each taken from a row in this store:
 
-**It waits on somebody else's behaviour.** `prediction_000004` claimed that
+**It waits on somebody else's behavior.** `prediction_000004` claimed that
 restoring an nginx route fixes a Discord bot, and asked for "a new row in
 `transitions` with `actor=user`". The route was fixed and answered nine live
 interactions; the row stayed unresolvable because nobody had clicked Join.
@@ -185,7 +185,7 @@ caller builds a filter from whatever values the rows happen to hold.
   came from is a different fact from how strong it is: 90% from a live call and
   90% from a plausible-looking README should not be spent the same way.
 - **statuses** — `open`, `resolved`, `void`. `void` means the claim stopped
-  being resolvable (the work was cancelled, the question changed) and is
+  being resolvable (the work was canceled, the question changed) and is
   excluded from every score rather than counted as a miss.
 - **outcomes** — `true`, `false`, `void`, accepted by `POST /resolve`. `void`
   stores `status=void` and leaves `outcome` empty.
@@ -264,7 +264,7 @@ group. All of it runs on resolved rows with an outcome of `true` or `false`;
   `uncertainty` is `base_rate × (1 - base_rate)`, the difficulty of the set
   rather than anything about you. The identity is **exact** here because the
   decomposition groups on the exact stated probability, which the ladder makes
-  possible — with free-form probabilities it would be an artefact of where the
+  possible — with free-form probabilities it would be an artifact of where the
   bucket edges fell.
 - **skill_score** — `1 - brier/uncertainty`: how much better than always
   guessing the base rate. Positive is skill, 0 is no better than the base rate,

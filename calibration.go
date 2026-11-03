@@ -51,7 +51,7 @@ type Score struct {
 	// 60%s come true equally often — and no amount of shading fixes that; stop
 	// dressing guesses as estimates. Computed by grouping on the exact stated
 	// probability, which the ladder makes possible, so the identity is exact
-	// rather than an artefact of the bucket edges.
+	// rather than an artifact of the bucket edges.
 	Reliability float64 `json:"reliability"`
 	Resolution  float64 `json:"resolution"`
 	Uncertainty float64 `json:"uncertainty"`
